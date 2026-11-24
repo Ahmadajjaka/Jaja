@@ -38,6 +38,14 @@ jobs:
         working-directory: extracted
         run: npx cap sync android
 
+      - name: Generate SHA Fingerprints
+        working-directory: extracted/android
+        run: |
+          echo "=================================="
+          echo "ANDROID SIGNING FINGERPRINTS"
+          echo "=================================="
+          ./gradlew signingReport
+
       - name: Build APK
         working-directory: extracted/android
         run: |
