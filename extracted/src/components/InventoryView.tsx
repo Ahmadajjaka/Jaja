@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Boxes,
   Plus,
@@ -34,6 +35,94 @@ import {
 } from '../utils/accounting';
 import { computeSuggestedSellingPrices } from '../utils/priceSuggestion';
 import { PriceSuggestionStrip } from './PriceSuggestionStrip';
+
+// Numeric input compatible with Android WebView
+interface NumericInputProps {
+  value: number;
+  onValueChange: (value: number) => void;
+  className?: string;
+  min?: number;
+  required?: boolean;
+  'data-testid'?: string;
+}
+
+const NumericInput: React.FC<NumericInputProps> = ({
+  value,
+  onValueChange,
+  className,
+  min = 0,
+  required = false,
+  'data-testid': testId,
+}) => {
+  const [text, setText] = useState(String(value));
+  const lastEmittedValue = useRef<number>(value);
+
+  useEffect(() => {
+    if (value !== lastEmittedValue.current) {
+      setText(String(value));
+      lastEmittedValue.current = value;
+    }
+  }, [value]);
+
+  const handleChange = (raw: string) => {
+    const normalized = raw.replace(',', '.');
+
+    if (!/^\d*\.?\d*$/.test(normalized)) {
+      return;
+    }
+
+    setText(normalized);
+
+    if (normalized === '' || normalized === '.') {
+      return;
+    }
+
+    const parsed = Number(normalized);
+
+    if (Number.isFinite(parsed) && parsed >= min) {
+      lastEmittedValue.current = parsed;
+      onValueChange(parsed);
+    }
+  };
+
+  const handleBlur = () => {
+    if (text === '' || text === '.') {
+      setText(String(min));
+      lastEmittedValue.current = min;
+      onValueChange(min);
+      return;
+    }
+
+    const parsed = Number(text);
+
+    if (!Number.isFinite(parsed) || parsed < min) {
+      setText(String(value));
+      lastEmittedValue.current = value;
+      return;
+    }
+
+    setText(String(parsed));
+    lastEmittedValue.current = parsed;
+    onValueChange(parsed);
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      pattern="[0-9]*[.,]?[0-9]*"
+      autoComplete="off"
+      autoCorrect="off"
+      spellCheck={false}
+      value={text}
+      required={required}
+      data-testid={testId}
+      onChange={(event) => handleChange(event.target.value)}
+      onBlur={handleBlur}
+      className={className}
+    />
+  );
+};
 
 export interface CoreCategoryDef {
   id: string;
@@ -603,7 +692,6 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Category Filter */}
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
@@ -617,7 +705,6 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
             ))}
           </select>
 
-          {/* Low stock toggle */}
           <button
             type="button"
             onClick={() => setFilterLowStockOnly(!filterLowStockOnly)}
@@ -860,12 +947,10 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   <label className="font-semibold text-slate-700 block mb-1">
                     الكمية المتوفرة
                   </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
+                  <NumericInput
+                    min={0}
                     value={currentStock}
-                    onChange={(e) => setCurrentStock(parseFloat(e.target.value) || 0)}
+                    onValueChange={setCurrentStock}
                     className="w-full p-2.5 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-slate-900 focus:outline-hidden"
                   />
                 </div>
@@ -889,11 +974,10 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   <label className="font-semibold text-slate-700 block mb-1">
                     حد التنبيه الأدنى
                   </label>
-                  <input
-                    type="number"
-                    min="0"
+                  <NumericInput
+                    min={0}
                     value={minStock}
-                    onChange={(e) => setMinStock(parseFloat(e.target.value) || 0)}
+                    onValueChange={setMinStock}
                     className="w-full p-2.5 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-slate-900 focus:outline-hidden"
                   />
                 </div>
@@ -904,13 +988,11 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   <label className="font-semibold text-slate-700 dark:text-slate-200 block mb-1">
                     سعر تكلفة الشراء
                   </label>
-                  <input
-                    type="number"
-                    min="0"
+                  <NumericInput
+                    min={0}
                     data-testid="inventory-cost-price-input"
                     value={costPrice}
-                    onChange={(e) => {
-                      const nextCost = Math.max(0, parseFloat(e.target.value) || 0);
+                    onValueChange={(nextCost) => {
                       setCostPrice(nextCost);
                       if (!editingProduct && !sellingPriceManuallyEdited) {
                         if (nextCost > 0) {
@@ -933,14 +1015,13 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   <label className="font-semibold text-slate-700 dark:text-slate-200 block mb-1">
                     سعر البيع المقترح
                   </label>
-                  <input
-                    type="number"
-                    min="0"
+                  <NumericInput
+                    min={0}
                     data-testid="inventory-selling-price-input"
                     value={sellingPrice}
-                    onChange={(e) => {
+                    onValueChange={(nextPrice) => {
                       setSellingPriceManuallyEdited(true);
-                      setSellingPrice(Math.max(0, parseFloat(e.target.value) || 0));
+                      setSellingPrice(nextPrice);
                     }}
                     className="w-full p-2.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg font-mono focus:ring-2 focus:ring-slate-900 dark:focus:ring-amber-500 focus:outline-hidden"
                   />
@@ -1011,7 +1092,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         </div>
       )}
 
-      {/* Stock Adjustment Modal (Requirement 4) */}
+      {/* Stock Adjustment Modal */}
       {isAdjustmentModalOpen && adjustingProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 p-6 space-y-4 text-xs">
@@ -1051,13 +1132,11 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 <label className="font-semibold text-slate-700 block mb-1">
                   الكمية الفعلية الموجودة بعد الجرد
                 </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
+                <NumericInput
+                  min={0}
                   required
                   value={newStockCount}
-                  onChange={(e) => setNewStockCount(parseFloat(e.target.value) || 0)}
+                  onValueChange={setNewStockCount}
                   className="w-full p-2.5 border border-slate-300 rounded-lg font-mono font-bold text-sm focus:ring-2 focus:ring-slate-900 focus:outline-hidden"
                 />
                 <span className="text-[11px] text-slate-500 block mt-1">
