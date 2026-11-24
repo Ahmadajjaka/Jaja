@@ -44,13 +44,12 @@ jobs:
           echo "=================================="
           echo "ANDROID SIGNING FINGERPRINTS"
           echo "=================================="
-          ./gradlew signingReport
+          bash gradlew signingReport
 
       - name: Build APK
         working-directory: extracted/android
         run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          bash gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
