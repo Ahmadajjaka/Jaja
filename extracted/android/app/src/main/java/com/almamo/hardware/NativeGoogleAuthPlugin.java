@@ -10,6 +10,7 @@ import android.content.pm.Signature;
 import android.content.pm.SigningInfo;
 import android.os.Build;
 import android.os.CancellationSignal;
+
 import androidx.activity.result.ActivityResult;
 import androidx.annotation.NonNull;
 import androidx.credentials.ClearCredentialStateRequest;
@@ -23,12 +24,14 @@ import androidx.credentials.exceptions.ClearCredentialException;
 import androidx.credentials.exceptions.GetCredentialCancellationException;
 import androidx.credentials.exceptions.GetCredentialException;
 import androidx.credentials.exceptions.NoCredentialException;
+
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
+
 import com.google.android.gms.auth.api.signin.GoogleSignIn;
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
 import com.google.android.gms.auth.api.signin.GoogleSignInClient;
@@ -39,15 +42,20 @@ import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.common.api.CommonStatusCodes;
 import com.google.android.gms.tasks.Task;
+
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
+
 import java.security.MessageDigest;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 @CapacitorPlugin(name = "NativeGoogleAuth")
 public class NativeGoogleAuthPlugin extends Plugin {
+
+    private static final String FALLBACK_WEB_CLIENT_ID =
+        "884929738685-g0k7ujn9o7p4m7t4kotal4edtgknuqgl.apps.googleusercontent.com";
 
     private final Executor bgExecutor = Executors.newSingleThreadExecutor();
     private boolean legacyTriedAfterNoCredential = false;
@@ -57,25 +65,36 @@ public class NativeGoogleAuthPlugin extends Plugin {
     private String getStringResourceByName(String name) {
         try {
             Context ctx = getContext();
-            int resId = ctx.getResources().getIdentifier(name, "string", ctx.getPackageName());
+            int resId = ctx.getResources().getIdentifier(
+                name, "string", ctx.getPackageName()
+            );
+
             if (resId != 0) {
                 String val = ctx.getString(resId);
                 return val != null ? val.trim() : "";
             }
         } catch (Exception ignored) {
         }
+
         return "";
     }
 
     private String resolveServerClientId(PluginCall call) {
-        String gsClientId = getStringResourceByName("default_web_client_id");
-        String passed = call != null ? call.getString("serverClientId") : null;
+        String gsClientId =
+            getStringResourceByName("default_web_client_id");
+
+        String passed = call != null
+            ? call.getString("serverClientId")
+            : null;
 
         if (passed != null && !passed.trim().isEmpty()) {
             if (!gsClientId.isEmpty() &&
-                passed.trim().equals(getStringResourceByName("almamo_fallback_web_client_id"))) {
+                passed.trim().equals(
+                    getStringResourceByName("almamo_fallback_web_client_id")
+                )) {
                 return gsClientId;
             }
+
             return passed.trim();
         }
 
@@ -83,7 +102,14 @@ public class NativeGoogleAuthPlugin extends Plugin {
             return gsClientId;
         }
 
-        return getStringResourceByName("almamo_fallback_web_client_id");
+        String configuredFallback =
+            getStringResourceByName("almamo_fallback_web_client_id");
+
+        if (!configuredFallback.isEmpty()) {
+            return configuredFallback;
+        }
+
+        return FALLBACK_WEB_CLIENT_ID;
     }
 
     private String digestBytesHex(byte[] bytes, String algorithm) {
@@ -109,10 +135,15 @@ public class NativeGoogleAuthPlugin extends Plugin {
         String pkg = ctx.getPackageName();
 
         diag.put("packageName", pkg);
-        diag.put("serverClientId", serverClientId != null ? serverClientId : "");
-        diag.put("googleServicesClientId", getStringResourceByName("default_web_client_id"));
-        diag.put("hasGoogleServicesJson", !getStringResourceByName("default_web_client_id").isEmpty());
-        diag.put("playServicesStatus", GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(ctx));
+        diag.put("serverClientId",
+            serverClientId != null ? serverClientId : "");
+        diag.put("googleServicesClientId",
+            getStringResourceByName("default_web_client_id"));
+        diag.put("hasGoogleServicesJson",
+            !getStringResourceByName("default_web_client_id").isEmpty());
+        diag.put("playServicesStatus",
+            GoogleApiAvailability.getInstance()
+                .isGooglePlayServicesAvailable(ctx));
 
         String sha1 = "";
         String sha256 = "";
@@ -122,7 +153,10 @@ public class NativeGoogleAuthPlugin extends Plugin {
             Signature[] signatures = null;
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                PackageInfo info = pm.getPackageInfo(pkg, PackageManager.GET_SIGNING_CERTIFICATES);
+                PackageInfo info = pm.getPackageInfo(
+                    pkg, PackageManager.GET_SIGNING_CERTIFICATES
+                );
+
                 SigningInfo signingInfo = info.signingInfo;
 
                 if (signingInfo != null) {
@@ -132,7 +166,9 @@ public class NativeGoogleAuthPlugin extends Plugin {
                 }
             } else {
                 @SuppressWarnings("deprecation")
-                PackageInfo info = pm.getPackageInfo(pkg, PackageManager.GET_SIGNATURES);
+                PackageInfo info = pm.getPackageInfo(
+                    pkg, PackageManager.GET_SIGNATURES
+                );
 
                 @SuppressWarnings("deprecation")
                 Signature[] legacySigs = info.signatures;
@@ -180,14 +216,16 @@ public class NativeGoogleAuthPlugin extends Plugin {
         this.lastServerClientIdUsed = serverClientId;
         this.legacyTriedAfterNoCredential = false;
 
-        int gmsAvail = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(activity);
+        int gmsAvail =
+            GoogleApiAvailability.getInstance()
+                .isGooglePlayServicesAvailable(activity);
 
         if (gmsAvail != ConnectionResult.SUCCESS) {
             JSObject diag = collectSigningDiagnostics(serverClientId);
 
             call.reject(
-                "Google Play Services غير متوفرة أو بحاجة للتحديث (status=" +
-                gmsAvail + ") [DIAG:" + diag.toString() + "]",
+                "Google Play Services غير متوفرة أو بحاجة للتحديث (status="
+                    + gmsAvail + ") [DIAG:" + diag.toString() + "]",
                 "PLAY_SERVICES_UNAVAILABLE"
             );
             return;
@@ -202,37 +240,54 @@ public class NativeGoogleAuthPlugin extends Plugin {
         String serverClientId
     ) {
         try {
-            CredentialManager credentialManager = CredentialManager.create(activity);
+            CredentialManager credentialManager =
+                CredentialManager.create(activity);
 
             GetSignInWithGoogleOption signInWithGoogleOption =
-                new GetSignInWithGoogleOption.Builder(serverClientId).build();
+                new GetSignInWithGoogleOption.Builder(serverClientId)
+                    .build();
 
-            GetCredentialRequest request = new GetCredentialRequest.Builder()
-                .addCredentialOption(signInWithGoogleOption)
-                .build();
+            GetCredentialRequest request =
+                new GetCredentialRequest.Builder()
+                    .addCredentialOption(signInWithGoogleOption)
+                    .build();
 
             credentialManager.getCredentialAsync(
                 activity,
                 request,
                 new CancellationSignal(),
                 bgExecutor,
-                new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
+                new CredentialManagerCallback<
+                    GetCredentialResponse,
+                    GetCredentialException
+                >() {
                     @Override
-                    public void onResult(@NonNull GetCredentialResponse result) {
-                        if (resolveGoogleCredentialResult(activity, call, result)) {
+                    public void onResult(
+                        @NonNull GetCredentialResponse result
+                    ) {
+                        if (resolveGoogleCredentialResult(
+                            activity, call, result
+                        )) {
                             return;
                         }
 
                         activity.runOnUiThread(() ->
-                            launchGoogleIdOneTapOption(activity, call, serverClientId)
+                            launchGoogleIdOneTapOption(
+                                activity, call, serverClientId
+                            )
                         );
                     }
 
                     @Override
-                    public void onError(@NonNull GetCredentialException e) {
+                    public void onError(
+                        @NonNull GetCredentialException e
+                    ) {
                         if (e instanceof GetCredentialCancellationException) {
                             activity.runOnUiThread(() ->
-                                call.reject("User cancelled Google Sign-In", "USER_CANCELED")
+                                call.reject(
+                                    "User cancelled Google Sign-In",
+                                    "USER_CANCELED"
+                                )
                             );
                             return;
                         }
@@ -241,7 +296,9 @@ public class NativeGoogleAuthPlugin extends Plugin {
                             (e.getMessage() != null ? e.getMessage() : "");
 
                         activity.runOnUiThread(() ->
-                            launchGoogleIdOneTapOption(activity, call, serverClientId)
+                            launchGoogleIdOneTapOption(
+                                activity, call, serverClientId
+                            )
                         );
                     }
                 }
@@ -260,52 +317,71 @@ public class NativeGoogleAuthPlugin extends Plugin {
         String serverClientId
     ) {
         try {
-            CredentialManager credentialManager = CredentialManager.create(activity);
+            CredentialManager credentialManager =
+                CredentialManager.create(activity);
 
-            GetGoogleIdOption googleIdOption = new GetGoogleIdOption.Builder()
-                .setFilterByAuthorizedAccounts(false)
-                .setServerClientId(serverClientId)
-                .setAutoSelectEnabled(false)
-                .build();
+            GetGoogleIdOption googleIdOption =
+                new GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(false)
+                    .setServerClientId(serverClientId)
+                    .setAutoSelectEnabled(false)
+                    .build();
 
-            GetCredentialRequest request = new GetCredentialRequest.Builder()
-                .addCredentialOption(googleIdOption)
-                .build();
+            GetCredentialRequest request =
+                new GetCredentialRequest.Builder()
+                    .addCredentialOption(googleIdOption)
+                    .build();
 
             credentialManager.getCredentialAsync(
                 activity,
                 request,
                 new CancellationSignal(),
                 bgExecutor,
-                new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
+                new CredentialManagerCallback<
+                    GetCredentialResponse,
+                    GetCredentialException
+                >() {
                     @Override
-                    public void onResult(@NonNull GetCredentialResponse result) {
-                        if (resolveGoogleCredentialResult(activity, call, result)) {
+                    public void onResult(
+                        @NonNull GetCredentialResponse result
+                    ) {
+                        if (resolveGoogleCredentialResult(
+                            activity, call, result
+                        )) {
                             return;
                         }
 
                         activity.runOnUiThread(() ->
-                            launchLegacyGoogleSignIn(activity, call, serverClientId, false)
+                            launchLegacyGoogleSignIn(
+                                activity, call, serverClientId, false
+                            )
                         );
                     }
 
                     @Override
-                    public void onError(@NonNull GetCredentialException e) {
+                    public void onError(
+                        @NonNull GetCredentialException e
+                    ) {
                         if (e instanceof GetCredentialCancellationException) {
                             activity.runOnUiThread(() ->
-                                call.reject("User cancelled Google Sign-In", "USER_CANCELED")
+                                call.reject(
+                                    "User cancelled Google Sign-In",
+                                    "USER_CANCELED"
+                                )
                             );
                             return;
                         }
 
-                        boolean hadNoCredential = e instanceof NoCredentialException;
+                        boolean hadNoCredential =
+                            e instanceof NoCredentialException;
 
                         if (lastCmError.isEmpty()) {
                             lastCmError = e.getType() + ": " +
                                 (e.getMessage() != null ? e.getMessage() : "");
                         } else {
-                            lastCmError = lastCmError + " | OneTap(" + e.getType() + ": " +
-                                (e.getMessage() != null ? e.getMessage() : "") + ")";
+                            lastCmError += " | OneTap(" + e.getType() + ": " +
+                                (e.getMessage() != null ? e.getMessage() : "") +
+                                ")";
                         }
 
                         activity.runOnUiThread(() ->
@@ -320,11 +396,12 @@ public class NativeGoogleAuthPlugin extends Plugin {
                 }
             );
         } catch (Exception ex) {
-            launchLegacyGoogleSignIn(activity, call, serverClientId, false);
+            launchLegacyGoogleSignIn(
+                activity, call, serverClientId, false
+            );
         }
     }
 
-    // تم إصلاح الأقواس الزائدة في هذه الدالة
     private boolean resolveGoogleCredentialResult(
         Activity activity,
         PluginCall call,
@@ -334,11 +411,14 @@ public class NativeGoogleAuthPlugin extends Plugin {
 
         if (
             credential instanceof CustomCredential &&
-            GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(credential.getType())
+            GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+                .equals(credential.getType())
         ) {
             try {
                 GoogleIdTokenCredential googleCred =
-                    GoogleIdTokenCredential.createFrom(credential.getData());
+                    GoogleIdTokenCredential.createFrom(
+                        credential.getData()
+                    );
 
                 JSObject ret = new JSObject();
                 ret.put("idToken", googleCred.getIdToken());
@@ -346,10 +426,16 @@ public class NativeGoogleAuthPlugin extends Plugin {
                 ret.put("displayName", googleCred.getDisplayName());
 
                 if (googleCred.getProfilePictureUri() != null) {
-                    ret.put("photoUrl", googleCred.getProfilePictureUri().toString());
+                    ret.put(
+                        "photoUrl",
+                        googleCred.getProfilePictureUri().toString()
+                    );
                 }
 
-                ret.put("provider", "google-native-credential-manager");
+                ret.put(
+                    "provider",
+                    "google-native-credential-manager"
+                );
 
                 activity.runOnUiThread(() -> call.resolve(ret));
                 return true;
@@ -372,31 +458,47 @@ public class NativeGoogleAuthPlugin extends Plugin {
 
         try {
             GoogleSignInOptions gso =
-                new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                new GoogleSignInOptions.Builder(
+                    GoogleSignInOptions.DEFAULT_SIGN_IN
+                )
                     .requestIdToken(serverClientId)
                     .requestEmail()
                     .requestProfile()
                     .build();
 
-            GoogleSignInClient signInClient = GoogleSignIn.getClient(activity, gso);
+            GoogleSignInClient signInClient =
+                GoogleSignIn.getClient(activity, gso);
+
             Intent signInIntent = signInClient.getSignInIntent();
 
-            startActivityForResult(call, signInIntent, "handleLegacyGoogleSignInResult");
+            startActivityForResult(
+                call,
+                signInIntent,
+                "handleLegacyGoogleSignInResult"
+            );
 
         } catch (Exception ex) {
-            JSObject diag = collectSigningDiagnostics(serverClientId);
+            JSObject diag =
+                collectSigningDiagnostics(serverClientId);
             diag.put("cmError", lastCmError);
 
             call.reject(
-                (ex.getMessage() != null ? ex.getMessage() : "Native Google Sign-In failed") +
-                    " [DIAG:" + diag.toString() + "]",
-                noCredentialFromCm ? "NO_GOOGLE_ACCOUNT" : "NATIVE_SIGN_IN_FAILED"
+                (ex.getMessage() != null
+                    ? ex.getMessage()
+                    : "Native Google Sign-In failed")
+                    + " [DIAG:" + diag.toString() + "]",
+                noCredentialFromCm
+                    ? "NO_GOOGLE_ACCOUNT"
+                    : "NATIVE_SIGN_IN_FAILED"
             );
         }
     }
 
     @ActivityCallback
-    protected void handleLegacyGoogleSignInResult(PluginCall call, ActivityResult result) {
+    protected void handleLegacyGoogleSignInResult(
+        PluginCall call,
+        ActivityResult result
+    ) {
         if (call == null) {
             return;
         }
@@ -406,18 +508,22 @@ public class NativeGoogleAuthPlugin extends Plugin {
         Task<GoogleSignInAccount> task =
             GoogleSignIn.getSignedInAccountFromIntent(data);
 
-        JSObject diag = collectSigningDiagnostics(lastServerClientIdUsed);
+        JSObject diag =
+            collectSigningDiagnostics(lastServerClientIdUsed);
         diag.put("cmError", lastCmError);
 
         try {
-            GoogleSignInAccount account = task.getResult(ApiException.class);
+            GoogleSignInAccount account =
+                task.getResult(ApiException.class);
 
-            if (account == null || account.getIdToken() == null ||
-                account.getIdToken().isEmpty()) {
-
+            if (
+                account == null ||
+                account.getIdToken() == null ||
+                account.getIdToken().isEmpty()
+            ) {
                 call.reject(
-                    "Missing Google ID Token (check Web Client ID & SHA-1) [DIAG:" +
-                        diag.toString() + "]",
+                    "Missing Google ID Token (check Web Client ID & SHA-1) [DIAG:"
+                        + diag.toString() + "]",
                     "MISSING_ID_TOKEN"
                 );
                 return;
@@ -439,19 +545,26 @@ public class NativeGoogleAuthPlugin extends Plugin {
             int statusCode = apiEx.getStatusCode();
 
             diag.put("gmsStatusCode", statusCode);
-            diag.put("gmsMessage", apiEx.getMessage() != null ? apiEx.getMessage() : "");
+            diag.put(
+                "gmsMessage",
+                apiEx.getMessage() != null ? apiEx.getMessage() : ""
+            );
 
             if (
                 statusCode == GoogleSignInStatusCodes.SIGN_IN_CANCELLED ||
                 statusCode == CommonStatusCodes.CANCELED
             ) {
-                call.reject("User cancelled Google Sign-In", "USER_CANCELED");
+                call.reject(
+                    "User cancelled Google Sign-In",
+                    "USER_CANCELED"
+                );
                 return;
             }
 
             if (statusCode == CommonStatusCodes.DEVELOPER_ERROR) {
                 call.reject(
-                    "ApiException: 10 (DEVELOPER_ERROR) [DIAG:" + diag.toString() + "]",
+                    "ApiException: 10 (DEVELOPER_ERROR) [DIAG:"
+                        + diag.toString() + "]",
                     "DEVELOPER_ERROR"
                 );
                 return;
@@ -462,8 +575,8 @@ public class NativeGoogleAuthPlugin extends Plugin {
                 statusCode == GoogleSignInStatusCodes.SIGN_IN_FAILED
             ) {
                 call.reject(
-                    "ApiException: 12500 (SIGN_IN_FAILED - OAuth Consent Screen / Google Auth Config) [DIAG:" +
-                        diag.toString() + "]",
+                    "ApiException: 12500 (SIGN_IN_FAILED - OAuth Consent Screen / Google Auth Config) [DIAG:"
+                        + diag.toString() + "]",
                     "GMS_12500"
                 );
                 return;
@@ -475,29 +588,36 @@ public class NativeGoogleAuthPlugin extends Plugin {
                     statusCode == GoogleSignInStatusCodes.INTERNAL_ERROR)
             ) {
                 call.reject(
-                    "No signed-in Google account found on Android device [DIAG:" +
-                        diag.toString() + "]",
+                    "No signed-in Google account found on Android device [DIAG:"
+                        + diag.toString() + "]",
                     "NO_GOOGLE_ACCOUNT"
                 );
                 return;
             }
 
             if (statusCode == CommonStatusCodes.NETWORK_ERROR) {
-                call.reject("Network error during Google Sign-In", "NETWORK_ERROR");
+                call.reject(
+                    "Network error during Google Sign-In",
+                    "NETWORK_ERROR"
+                );
                 return;
             }
 
             call.reject(
                 "GoogleSignIn ApiException: " + statusCode + " " +
-                    (apiEx.getMessage() != null ? apiEx.getMessage() : "") +
+                    (apiEx.getMessage() != null
+                        ? apiEx.getMessage()
+                        : "") +
                     " [DIAG:" + diag.toString() + "]",
                 "GMS_" + statusCode
             );
 
         } catch (Exception ex) {
             call.reject(
-                (ex.getMessage() != null ? ex.getMessage() : "Google Sign-In error") +
-                    " [DIAG:" + diag.toString() + "]",
+                (ex.getMessage() != null
+                    ? ex.getMessage()
+                    : "Google Sign-In error")
+                    + " [DIAG:" + diag.toString() + "]",
                 "NATIVE_SIGN_IN_ERROR"
             );
         }
@@ -513,19 +633,25 @@ public class NativeGoogleAuthPlugin extends Plugin {
         }
 
         try {
-            CredentialManager credentialManager = CredentialManager.create(activity);
+            CredentialManager credentialManager =
+                CredentialManager.create(activity);
 
             credentialManager.clearCredentialStateAsync(
                 new ClearCredentialStateRequest(),
                 new CancellationSignal(),
                 bgExecutor,
-                new CredentialManagerCallback<Void, ClearCredentialException>() {
+                new CredentialManagerCallback<
+                    Void,
+                    ClearCredentialException
+                >() {
                     @Override
                     public void onResult(Void unused) {
                     }
 
                     @Override
-                    public void onError(@NonNull ClearCredentialException e) {
+                    public void onError(
+                        @NonNull ClearCredentialException e
+                    ) {
                     }
                 }
             );
@@ -536,7 +662,9 @@ public class NativeGoogleAuthPlugin extends Plugin {
             String serverClientId = resolveServerClientId(call);
 
             GoogleSignInOptions gso =
-                new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                new GoogleSignInOptions.Builder(
+                    GoogleSignInOptions.DEFAULT_SIGN_IN
+                )
                     .requestIdToken(serverClientId)
                     .requestEmail()
                     .build();
