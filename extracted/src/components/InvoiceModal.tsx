@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import {
   Printer,
@@ -16,6 +17,7 @@ import {
 import { SaleInvoice, StoreSettings } from '../types/accounting';
 import { formatCurrency, formatNumber } from '../utils/accounting';
 import { exportInvoicePdf } from '../utils/pdfExport';
+import { downloadInvoicePdfWithJsPdf } from '../utils/invoicePdf';
 
 interface InvoiceModalProps {
   invoice: SaleInvoice | null;
@@ -27,13 +29,12 @@ interface InvoiceModalProps {
  * Simple SVG Barcode generator for POS thermal receipts
  */
 const ThermalBarcode: React.FC<{ code: string }> = ({ code }) => {
-  // Generate consistent pseudo bar widths from code string
   const bars: number[] = [];
   for (let i = 0; i < code.length; i++) {
     const charCode = code.charCodeAt(i);
     bars.push((charCode % 3) + 1, 1, ((charCode >> 1) % 2) + 1, 1, (charCode % 2) + 1);
   }
-  // Add guard patterns
+
   const allBars = [2, 1, 1, ...bars, 1, 2, 1, 2];
 
   let currentX = 10;
@@ -47,7 +48,6 @@ const ThermalBarcode: React.FC<{ code: string }> = ({ code }) => {
         {allBars.map((width, idx) => {
           const x = currentX;
           currentX += width * 2;
-          // Alternate black bar and white gap
           if (idx % 2 === 0) {
             return (
               <rect
@@ -97,16 +97,36 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     }
   };
 
-  const handleDownload = () => {
-    const res = exportInvoicePdf(invoice, settings, layoutMode, true);
-    showFeedback(`تم تنزيل ملف PDF: ${res.fileName}`);
+  // Updated Android-compatible PDF download
+  const handleDownload = async () => {
+    try {
+      showFeedback('جارٍ تجهيز ملف PDF...');
+
+      const res = await downloadInvoicePdfWithJsPdf(
+        invoice,
+        settings,
+        layoutMode
+      );
+
+      if (res.mode === 'share') {
+        showFeedback(`تم تجهيز ${res.fileName}. اختر حفظ من نافذة المشاركة.`);
+      } else {
+        showFeedback(`تم تنزيل ملف PDF: ${res.fileName}`);
+      }
+    } catch (error) {
+      console.error('Invoice PDF download failed:', error);
+
+      const message =
+        error instanceof Error ? error.message : 'خطأ غير معروف';
+
+      showFeedback(`فشل حفظ الفاتورة: ${message}`);
+    }
   };
 
   const isThermal = layoutMode === 'thermal80';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
-      {/* Dynamic Print CSS for Thermal 80mm vs Standard A4 */}
       <style
         dangerouslySetInnerHTML={{
           __html: isThermal
@@ -186,7 +206,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
           isThermal ? 'max-w-md' : 'max-w-3xl'
         } bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-4 transition-all duration-200`}
       >
-        {/* Header Actions (hidden in print) */}
+        {/* Header Actions */}
         <div className="px-5 py-3.5 bg-slate-900 text-white print:hidden space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
@@ -222,7 +242,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             </div>
           </div>
 
-          {/* Format Selector Bar */}
+          {/* Format Selector */}
           <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800 text-xs">
             <span className="text-slate-400 font-medium text-[11px]">
               تنسيق الورقة:
@@ -266,7 +286,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
           </div>
         </div>
 
-        {/* Printable Invoice Container */}
+        {/* Printable Invoice */}
         <div className="p-4 sm:p-6 max-h-[75vh] overflow-y-auto bg-slate-50/50">
           <div
             id="printable-invoice"
@@ -276,12 +296,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                 : 'w-full p-6 sm:p-8 border border-slate-200 shadow-sm rounded-2xl text-slate-900 space-y-6 text-xs'
             }`}
           >
-            {/* ============================================================== */}
-            {/* THERMAL 80MM COMPACT LAYOUT (PAPER-SAVING & CONDENSED)         */}
-            {/* ============================================================== */}
             {isThermal ? (
               <div className="space-y-2.5 thermal-receipt">
-                {/* Store Header */}
                 <div className="text-center space-y-1">
                   <h2 className="text-lg font-black tracking-tight text-slate-950 font-sans">
                     {settings.storeName}
@@ -303,10 +319,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                   )}
                 </div>
 
-                {/* Dashed separator */}
                 <div className="border-t border-dashed border-slate-400 thermal-dotted my-2"></div>
 
-                {/* Metadata Row */}
                 <div className="space-y-1 text-[11px]">
                   <div className="flex justify-between items-center font-bold">
                     <span>فاتورة مبيعات:</span>
@@ -336,7 +350,6 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                   </div>
                 </div>
 
-                {/* Return/Cancel Alert */}
                 {invoice.status !== 'completed' && (
                   <div className="p-1.5 bg-rose-50 border border-rose-300 rounded text-rose-800 text-[10px] font-bold text-center">
                     حالة الفاتورة: {invoice.status === 'returned' ? 'مرتجعة' : 'ملغاة'}
@@ -344,10 +357,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                   </div>
                 )}
 
-                {/* Dashed separator */}
                 <div className="border-t border-dashed border-slate-400 thermal-dotted my-2"></div>
 
-                {/* Condensed Items Table (No wasted space) */}
                 <div>
                   <div className="flex justify-between items-center text-[10px] font-bold pb-1 text-slate-800 border-b border-slate-300">
                     <span className="w-1/2 text-right">المادة</span>
@@ -384,10 +395,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                   </div>
                 </div>
 
-                {/* Dashed separator */}
                 <div className="border-t border-dashed border-slate-400 thermal-dotted my-2"></div>
 
-                {/* Condensed Financial Totals */}
                 <div className="space-y-1 text-[11px]">
                   <div className="flex justify-between items-center text-slate-700 text-[10px]">
                     <span>عدد الأصناف:</span>
@@ -444,10 +453,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                   )}
                 </div>
 
-                {/* Double line before footer */}
                 <div className="border-t-2 border-dashed border-slate-500 thermal-double my-2.5"></div>
 
-                {/* Thermal Footer */}
                 <div className="text-center space-y-1 font-sans">
                   <p className="text-[11px] font-bold text-slate-900">
                     شكراً لزيارتكم وتعاملكم معنا
@@ -455,21 +462,14 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                   <p className="text-[9px] text-slate-600 leading-tight">
                     {settings.invoiceFooterNote}
                   </p>
-
-                  {/* Clean simulated Barcode for 80mm thermal paper */}
                   <ThermalBarcode code={invoice.invoiceNumber} />
-
                   <p className="text-[8px] text-slate-400 font-mono">
                     طُبعت: {new Date().toLocaleDateString('ar-SA')} · خردوات المامو
                   </p>
                 </div>
               </div>
             ) : (
-              /* ============================================================== */
-              /* STANDARD A4 FULL LAYOUT                                        */
-              /* ============================================================== */
               <div className="space-y-6">
-                {/* Store Header */}
                 <div className="text-center border-b border-slate-200 pb-5">
                   <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
                     {settings.storeName}
@@ -501,7 +501,6 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                   )}
                 </div>
 
-                {/* Invoice Metadata Row */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs">
                   <div>
                     <span className="text-slate-500 block">رقم الفاتورة:</span>
@@ -533,7 +532,6 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                   </div>
                 </div>
 
-                {/* Status Alert if Cancelled/Returned */}
                 {invoice.status !== 'completed' && (
                   <div className="p-3 bg-rose-50 border border-rose-300 rounded-lg text-rose-800 text-xs font-bold text-center">
                     حالة الفاتورة: {invoice.status === 'returned' ? 'مرتجعة' : 'ملغاة'}
@@ -541,7 +539,6 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                   </div>
                 )}
 
-                {/* Items Table */}
                 <div className="overflow-x-auto border border-slate-200 rounded-xl">
                   <table className="w-full text-right text-xs">
                     <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
@@ -591,7 +588,6 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                   </table>
                 </div>
 
-                {/* Financial Totals Calculation Box */}
                 <div className="flex flex-col md:flex-row justify-between items-start gap-4">
                   <div className="w-full md:w-1/2 p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
                     <span className="font-bold text-slate-700 block">
@@ -644,7 +640,6 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                   </div>
                 </div>
 
-                {/* Footer Note and Thank you */}
                 <div className="text-center border-t border-slate-200 pt-4 space-y-1">
                   <p className="text-sm font-bold text-slate-800">
                     شكراً لتعاملكم مع خردوات المامو
