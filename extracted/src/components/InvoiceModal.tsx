@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { SaleInvoice, StoreSettings } from '../types/accounting';
 import { formatCurrency, formatNumber } from '../utils/accounting';
-import { exportInvoicePdf } from '../utils/pdfExport';
+import { exportInvoicePdfWithJsPdf } from '../utils/invoicePdf';
 import { downloadInvoicePdfWithJsPdf } from '../utils/invoicePdf';
 
 interface InvoiceModalProps {
@@ -102,7 +102,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     try {
       showFeedback('جارٍ تجهيز ملف PDF...');
 
-      const res = await downloadInvoicePdfWithJsPdf(
+      const res = await exportInvoicePdfWithJsPdf((
         invoice,
         settings,
         layoutMode
