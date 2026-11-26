@@ -102,11 +102,17 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     try {
       showFeedback('جارٍ تجهيز ملف PDF...');
 
-      const res = await exportInvoicePdfWithJsPdf((
-        invoice,
-        settings,
-        layoutMode
-      );
+      const res = await exportInvoicePdfWithJsPdf(
+  invoice,
+  settings,
+  layoutMode
+);
+
+if (res.mode === 'download') {
+  showFeedback(`تم تنزيل ملف PDF: ${res.fileName}`);
+} else {
+  showFeedback(`تم تجهيز الفاتورة (${res.fileName}) للطباعة.`);
+}
 
       if (res.mode === 'share') {
         showFeedback(`تم تجهيز ${res.fileName}. اختر حفظ من نافذة المشاركة.`);
