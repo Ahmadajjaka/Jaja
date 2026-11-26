@@ -1,7 +1,9 @@
 import { jsPDF } from 'jspdf';
 import { SaleInvoice, StoreSettings } from '../types/accounting';
 import { formatCurrency, formatNumber } from './accounting';
-
+import { Capacitor } from '@capacitor/core';
+import { Directory, Filesystem } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 export type InvoicePdfLayout = 'thermal80' | 'standard';
 
 export interface BuiltInvoicePdfResult {
