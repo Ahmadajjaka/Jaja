@@ -511,6 +511,8 @@ function buildThermal80CanvasJsPdf(
 
   const imgData = trimmedCanvas.toDataURL('image/png');
   doc.addImage(imgData, 'PNG', 0, 0, mmWidth, mmHeight, undefined, 'FAST');
+  canvas.width = canvas.height = 0;
+  trimmedCanvas.width = trimmedCanvas.height = 0;
   return doc;
 }
 
@@ -940,8 +942,9 @@ function buildStandardA4CanvasJsPdf(
 
   pages.forEach((pageCanvas, idx) => {
     if (idx > 0) doc.addPage('a4', 'portrait');
-    const imgData = pageCanvas.toDataURL('image/png');
-    doc.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
+    // JPEG keeps memory and file size low on Android WebView
+    const imgData = pageCanvas.toDataURL('image/jpeg', 0.92);
+    doc.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
   });
 
   return doc;
@@ -1027,18 +1030,104 @@ export function buildInvoicePdfDocument(
   };
 }
 
+
 /**
- * Generates and downloads or prints a sales invoice PDF using jsPDF.
- * Safe inside iframes (never uses window.alert or window.open).
+ * Makes sure the Cairo font is loaded before drawing on canvas.
+ * Without this, Android WebView draws the first invoice with a fallback font.
  */
-export function exportInvoicePdfWithJsPdf(
+async function ensureInvoiceFonts(): Promise<void> {
+  if (typeof document === 'undefined' || !('fonts' in document)) return;
+  try {
+    await Promise.all([
+      document.fonts.load("500 16px 'Cairo'", 'مامو 123'),
+      document.fonts.load("700 16px 'Cairo'", 'مامو 123'),
+      document.fonts.load("900 16px 'Cairo'", 'مامو 123'),
+    ]);
+    await document.fonts.ready;
+  } catch {
+    /* fall back to system fonts */
+  }
+}
+
+/** ASCII-only name: safe for Android FileProvider / share URIs. */
+function nativeSafeFileName(invoice: SaleInvoice, layout: InvoicePdfLayout): string {
+  const num = (invoice.invoiceNumber || 'invoice').replace(/[^A-Za-z0-9_-]+/g, '-');
+  return `invoice_${num}_${layout === 'thermal80' ? '80mm' : 'A4'}.pdf`;
+}
+
+function isShareCancelled(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return msg.includes('cancel') || msg.includes('dismiss');
+}
+
+/**
+ * Generates and exports a sales invoice PDF.
+ *
+ * Android / iOS:
+ *   Saves the PDF in the app cache directory (no storage permission needed),
+ *   then opens the native share sheet so the user can save, print or send it.
+ *
+ * Web:
+ *   Direct download, or silent print through a hidden iframe.
+ */
+export async function exportInvoicePdfWithJsPdf(
   invoice: SaleInvoice,
   settings: StoreSettings,
   layout: InvoicePdfLayout = 'thermal80',
   downloadDirect: boolean = false
-): { success: boolean; fileName: string; mode: 'download' | 'print'; pageCount: number } {
+): Promise<{
+  success: boolean;
+  fileName: string;
+  mode: 'download' | 'print';
+  pageCount: number;
+}> {
+  await ensureInvoiceFonts();
   const built = buildInvoicePdfDocument(invoice, settings, layout);
 
+  // ───────── Native Android / iOS ─────────
+  if (Capacitor.isNativePlatform()) {
+    const fileName = nativeSafeFileName(invoice, layout);
+    try {
+      const dataUri = built.doc.output('datauristring');
+      const base64Data = dataUri.substring(dataUri.indexOf(',') + 1);
+      if (!base64Data) {
+        throw new Error('تعذر تحويل الفاتورة إلى ملف PDF.');
+      }
+
+      // Cache dir: no runtime permission, and Capacitor's FileProvider can share it.
+      const saved = await Filesystem.writeFile({
+        path: `invoices/${fileName}`,
+        data: base64Data,
+        directory: Directory.Cache,
+        recursive: true,
+      });
+
+      try {
+        await Share.share({
+          title: `فاتورة مبيعات ${invoice.invoiceNumber}`,
+          text: `فاتورة من ${settings.storeName || 'خردوات المامو'}`,
+          url: saved.uri,
+          dialogTitle: 'حفظ أو مشاركة الفاتورة',
+        });
+      } catch (shareErr) {
+        // Closing the share sheet is not an error.
+        if (!isShareCancelled(shareErr)) throw shareErr;
+      }
+
+      return {
+        success: true,
+        fileName,
+        mode: 'download',
+        pageCount: built.pageCount,
+      };
+    } catch (err) {
+      console.error('Native invoice PDF export failed:', err);
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`تعذر حفظ أو مشاركة الفاتورة على الجهاز: ${message}`);
+    }
+  }
+
+  // ───────── Web: direct download ─────────
   if (downloadDirect || typeof document === 'undefined') {
     built.doc.save(built.fileName);
     return {
@@ -1049,6 +1138,7 @@ export function exportInvoicePdfWithJsPdf(
     };
   }
 
+  // ───────── Web: print via hidden iframe ─────────
   try {
     built.doc.autoPrint({ variant: 'non-conform' });
     const blob = built.doc.output('blob');
@@ -1076,24 +1166,17 @@ export function exportInvoicePdfWithJsPdf(
         built.doc.save(built.fileName);
       }
       setTimeout(() => {
-        if (document.body.contains(iframe)) {
-          document.body.removeChild(iframe);
-        }
+        if (document.body.contains(iframe)) document.body.removeChild(iframe);
         URL.revokeObjectURL(url);
       }, 10000);
     };
 
-    iframe.onload = () => {
-      setTimeout(triggerPrint, 250);
-    };
-
+    iframe.onload = () => setTimeout(triggerPrint, 250);
     document.body.appendChild(iframe);
 
-    // Safety fallback if browser PDF viewer doesn't fire onload promptly
+    // Fallback if the PDF viewer never fires onload
     setTimeout(() => {
-      if (!printed) {
-        triggerPrint();
-      }
+      if (!printed) triggerPrint();
     }, 1500);
 
     return {
